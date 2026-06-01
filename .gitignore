@@ -1,0 +1,19 @@
+.DS_Store
+
+# Local development secrets and certificates.
+.devkeys/
+mock-client/.devkeys/
+certs/
+*.key
+*.pem
+
+# Local sanitized output sinks.
+data/
+*.jsonl
+!server/testdata/*.jsonl
+*.parquet
+
+# Go build/test artifacts.
+bin/
+coverage.out
+*.test

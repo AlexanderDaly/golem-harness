@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package golem.v1;
+
+option go_package = "golem-harness/server/gen/golem/v1;golemv1";
+
+import "google/protobuf/timestamp.proto";
+
+service TelemetryIngestService {
+  rpc IngestFrame(IngestFrameRequest) returns (IngestFrameResponse);
+}
+
+message IngestFrameRequest {
+  SignatureEnvelope envelope = 1;
+}
+
+message IngestFrameResponse {
+  string request_id = 1;
+  Decision decision = 2;
+  repeated string reason_codes = 3;
+  string sanitizer_version = 4;
+}
+
+message SignatureEnvelope {
+  string protocol_version = 1;
+  string device_id = 2;
+  string trajectory_id = 3;
+  string frame_id = 4;
+  uint64 sequence = 5;
+  google.protobuf.Timestamp signed_at = 6;
+  bytes canonical_payload = 7;
+  bytes detached_signature = 8;
+  string payload_sha256_hex = 9;
+  string signature_alg = 10;
+  string public_key_id = 11;
+  string client_cert_fingerprint_sha256 = 12;
+}
+
+message TelemetryFrame {
+  string protocol_version = 1;
+  string trajectory_id = 2;
+  string frame_id = 3;
+  uint64 sequence = 4;
+  google.protobuf.Timestamp event_timestamp = 5;
+  DeviceMetadata device = 6;
+  ForegroundApp foreground_app = 7;
+  AllowlistDecision allowlist_decision = 8;
+  AccessibilityTree ui_tree = 9;
+  IntentMetadata intent = 10;
+  ActionMetadata action = 11;
+  UISettleMetadata ui_settle = 12;
+  ScreenshotRef screenshot_ref = 13;
+  SanitizerMetadata sanitizer = 14;
+  SignatureMetadata signature = 15;
+
+  // Pre-storage only. Implementations must clear this before sanitizer output
+  // crosses the storage boundary.
+  map<string, string> pre_storage_raw_fields = 100;
+}
+
+message DeviceMetadata {
+  string device_id = 1;
+  string android_sdk_version = 2;
+  string build_fingerprint_hash = 3;
+  string build_metadata_redaction_status = 4;
+}
+
+message ForegroundApp {
+  string package_name = 1;
+  string activity_name = 2;
+}
+
+message AllowlistDecision {
+  Decision decision = 1;
+  repeated string reason_codes = 2;
+  repeated string allowed_packages = 3;
+  string kill_switch_reason = 4;
+}
+
+message AccessibilityTree {
+  UINode root = 1;
+  uint32 node_count = 2;
+  bool partial_snapshot = 3;
+}
+
+message UINode {
+  string stable_node_id = 1;
+  Bounds bounds = 2;
+  string class_name = 3;
+  string package_name = 4;
+  string resource_id_hash = 5;
+  string text_hash = 6;
+  RedactionStatus text_redaction_status = 7;
+  string content_description_hash = 8;
+  RedactionStatus content_description_redaction_status = 9;
+  bool clickable = 10;
+  bool enabled = 11;
+  bool focused = 12;
+  bool selected = 13;
+  bool checkable = 14;
+  repeated UINode children = 15;
+
+  // Pre-storage only. Raw values are present only inside bounded request scope.
+  string pre_storage_text = 100;
+  string pre_storage_content_description = 101;
+}
+
+message Bounds {
+  int32 left = 1;
+  int32 top = 2;
+  int32 right = 3;
+  int32 bottom = 4;
+}
+
+message IntentMetadata {
+  string operator_intent_id = 1;
+  string intent_type = 2;
+  repeated string tags = 3;
+  string natural_language_hash = 4;
+  RedactionStatus natural_language_redaction_status = 5;
+}
+
+message ActionMetadata {
+  string action_id = 1;
+  string action_type = 2;
+  string target_stable_node_id = 3;
+  Bounds target_bounds = 4;
+  bool deterministic = 5;
+  repeated string preconditions = 6;
+}
+
+message UISettleMetadata {
+  bool observed = 1;
+  uint32 settle_timeout_ms = 2;
+  uint32 elapsed_ms = 3;
+  string settle_status = 4;
+}
+
+message ScreenshotRef {
+  string reference_id = 1;
+  string sha256_hex = 2;
+  string media_type = 3;
+  string redaction_status = 4;
+  repeated RedactionBox redaction_boxes = 5;
+}
+
+message RedactionBox {
+  Bounds bounds = 1;
+  string reason_code = 2;
+}
+
+message SanitizerMetadata {
+  string sanitizer_version = 1;
+  Decision decision = 2;
+  repeated string redaction_rules_applied = 3;
+  repeated string fields_dropped = 4;
+  repeated string reason_codes = 5;
+  string kill_switch_reason = 6;
+}
+
+message SignatureMetadata {
+  string signature_alg = 1;
+  string key_id = 2;
+  string payload_sha256_hex = 3;
+  string verification_status = 4;
+}
+
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_ACCEPT = 1;
+  DECISION_DROP = 2;
+  DECISION_QUARANTINE = 3;
+}
+
+enum RedactionStatus {
+  REDACTION_STATUS_UNSPECIFIED = 0;
+  REDACTION_STATUS_NOT_PRESENT = 1;
+  REDACTION_STATUS_HASHED = 2;
+  REDACTION_STATUS_REDACTED = 3;
+  REDACTION_STATUS_DROPPED = 4;
+  REDACTION_STATUS_PRE_STORAGE_ONLY = 5;
+}

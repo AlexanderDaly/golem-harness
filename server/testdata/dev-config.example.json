@@ -1,0 +1,20 @@
+{
+  "grpc_addr": "127.0.0.1:7443",
+  "http_addr": "127.0.0.1:8080",
+  "storage_path": "data/sanitized_frames.jsonl",
+  "max_payload_bytes": 65536,
+  "signature_ttl_seconds": 300,
+  "allowed_packages": ["com.android.settings"],
+  "sensitive_packages": ["com.example.bank"],
+  "allowed_devices": [
+    {
+      "device_id": "mock-device",
+      "ed25519_public_key_base64": "REPLACE_WITH_MOCK_CLIENT_PUBLIC_KEY_BASE64",
+      "public_key_id": "mock-key"
+    }
+  ],
+  "mtls": {
+    "enabled": false,
+    "require_client": false
+  }
+}

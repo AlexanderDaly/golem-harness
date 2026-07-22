@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	golemv1 "golem-harness/server/gen/golem/v1"
 	"golem-harness/server/internal/auth"
 	"golem-harness/server/internal/ingest"
 	"golem-harness/server/internal/sanitize"
@@ -20,7 +21,9 @@ import (
 	"golem-harness/server/pkg/client"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -85,6 +88,28 @@ func TestSanitizerFailurePreventsStorage(t *testing.T) {
 	}
 }
 
+func TestMissingSignedAtIsInvalidArgumentNotUnauthenticated(t *testing.T) {
+	env := newIngestEnv(t, sanitize.NewPipeline([]string{testutil.AllowedPkg}, nil))
+	defer env.cleanup()
+
+	envelope := testutil.SignedEnvelope(t, env.privateKey, testutil.RawFrame(testutil.AllowedPkg, "frame-1", 1, "Settings"), env.now)
+	pbEnv := ingest.EnvelopeToProto(envelope)
+	pbEnv.SignedAt = nil
+
+	api := golemv1.NewTelemetryIngestServiceClient(env.conn)
+	_, err := api.IngestFrame(context.Background(), &golemv1.IngestFrameRequest{Envelope: pbEnv})
+	if err == nil {
+		t.Fatal("expected error for nil signed_at")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status, got %v", err)
+	}
+	if st.Code() != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument (missing field), got %v (%v)", st.Code(), err)
+	}
+}
+
 type ingestEnv struct {
 	privateKey ed25519.PrivateKey
 	conn       *grpc.ClientConn
@@ -119,16 +144,17 @@ func newIngestEnv(t *testing.T, sanitizer ingest.Sanitizer) *ingestEnv {
 	}
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer(ingest.ServerOptions(64*1024 + 4096)...)
-	ingest.RegisterTelemetryIngestServiceServer(server, service)
+	ingest.Register(server, service)
 	go func() {
 		_ = server.Serve(listener)
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	conn, err := grpc.DialContext(ctx, "bufnet",
+
+	// grpc.NewClient defaults to the DNS resolver. A bare target like "bufnet"
+	// is treated as a hostname and fails. DialContext did not require a scheme;
+	// passthrough:// skips resolution so WithContextDialer reaches bufconn.
+	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.ForceCodec(ingest.JSONCodec{})),
 	)
 	if err != nil {
 		t.Fatal(err)

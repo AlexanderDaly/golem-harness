@@ -6,7 +6,7 @@ Project Golem-Harness is an internal, consent-based Android automation research 
 
 1. A test client builds a synthetic telemetry frame in memory.
 2. The client serializes the frame payload and signs a canonical representation with Ed25519.
-3. `golem-proxy` receives the signed envelope over gRPC. The current implementation uses a bounded JSON gRPC codec because protobuf generation tools are not installed locally.
+3. `golem-proxy` receives `IngestFrameRequest` over protobuf gRPC (`server/gen/golem/v1`). The signed envelope’s `canonical_payload` is still JSON bytes of a domain `RawFrame` (not protobuf `TelemetryFrame`).
 4. The proxy verifies payload size, timestamp freshness, replay status, device authorization, payload hash, and detached signature.
 5. The raw payload is decoded only in request scope and immediately passed through the sanitizer.
 6. Accepted sanitized frames are written to the storage sink. Dropped or quarantined frames are not persisted.
@@ -26,24 +26,22 @@ Project Golem-Harness is an internal, consent-based Android automation research 
 
 ## Protobuf Contract
 
-The schema lives at `proto/golem/v1/telemetry.proto`. It includes the intended versioned contract for generated clients and servers.
+The schema lives at `proto/golem/v1/telemetry.proto`. Generated Go bindings are committed at `server/gen/golem/v1/` (import `golem-harness/server/gen/golem/v1`, package `golemv1`).
 
-Generation command once tools are installed:
+Codegen uses [Buf](https://buf.build) with remote plugins (see root `buf.yaml`, `buf.gen.yaml`, `buf.lock`).
 
 ```bash
-cd golem-harness
-protoc -I proto \
-  --go_out=server/gen --go_opt=module=golem-harness/server/gen \
-  --go-grpc_out=server/gen --go-grpc_opt=module=golem-harness/server/gen \
-  proto/golem/v1/telemetry.proto
+# requires buf CLI (e.g. brew install bufbuild/buf/buf)
+make proto
+# equivalent: buf dep update && buf generate
+
+make lint-proto
+# equivalent: buf lint
 ```
 
-Current local tool gap:
+Output: `server/gen/golem/v1/telemetry.pb.go` and `telemetry_grpc.pb.go`. Commit regenerated files after proto changes.
 
-- `protoc` is not installed.
-- `protoc-gen-go` is not installed.
-- `protoc-gen-go-grpc` is not installed.
-- `buf` is not installed.
+Ingest implements the generated `TelemetryIngestServiceServer` (`ingest.GRPCServer`). Domain verification still uses `auth.SignedEnvelope`; convert at the gRPC boundary only.
 
 ## Phase 1 Limitations
 

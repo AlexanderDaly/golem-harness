@@ -99,6 +99,7 @@ func (s *Service) IngestFrame(ctx context.Context, envelope *auth.SignedEnvelope
 }
 
 func bindEnvelopeToFrame(envelope auth.SignedEnvelope, frame *trajectory.RawFrame) error {
+	// Fill empty string IDs from the envelope; never treat sequence 0 as unset.
 	if frame.ProtocolVersion == "" {
 		frame.ProtocolVersion = envelope.ProtocolVersion
 	}
@@ -107,9 +108,6 @@ func bindEnvelopeToFrame(envelope auth.SignedEnvelope, frame *trajectory.RawFram
 	}
 	if frame.FrameID == "" {
 		frame.FrameID = envelope.FrameID
-	}
-	if frame.Sequence == 0 {
-		frame.Sequence = envelope.Sequence
 	}
 	if frame.Device.DeviceID == "" {
 		frame.Device.DeviceID = envelope.DeviceID

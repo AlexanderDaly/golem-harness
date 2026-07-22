@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"time"
 
+	golemv1 "golem-harness/server/gen/golem/v1"
 	"golem-harness/server/internal/auth"
 	"golem-harness/server/internal/ingest"
 	"golem-harness/server/internal/trajectory"
@@ -15,7 +17,6 @@ import (
 
 type SignedEnvelope = auth.SignedEnvelope
 type Response = ingest.Response
-type JSONCodec = ingest.JSONCodec
 type RawFrame = trajectory.RawFrame
 type DeviceMetadata = trajectory.DeviceMetadata
 type ForegroundApp = trajectory.ForegroundApp
@@ -44,5 +45,15 @@ func BuildSignedEnvelope(privateKey ed25519.PrivateKey, signedAt time.Time, fram
 }
 
 func IngestFrame(ctx context.Context, conn grpc.ClientConnInterface, envelope *SignedEnvelope) (*Response, error) {
-	return ingest.ClientIngestFrame(ctx, conn, envelope, grpc.ForceCodec(ingest.JSONCodec{}))
+	if envelope == nil {
+		return nil, errors.New("missing envelope")
+	}
+	client := golemv1.NewTelemetryIngestServiceClient(conn)
+	pbResp, err := client.IngestFrame(ctx, &golemv1.IngestFrameRequest{
+		Envelope: ingest.EnvelopeToProto(*envelope),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ingest.ResponseFromProto(pbResp), nil
 }

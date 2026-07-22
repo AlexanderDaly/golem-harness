@@ -2,9 +2,9 @@
 
 ## Implemented
 
-- Versioned protobuf telemetry contract.
+- Versioned protobuf telemetry contract with Buf-generated Go stubs under `server/gen/golem/v1/`.
 - Go server module with auth, config, ingest, sanitizer, storage, trajectory, test utility, and client helper packages.
-- gRPC ingestion endpoint using a bounded JSON codec until generated protobuf code is available.
+- gRPC ingestion over protobuf (`IngestFrameRequest` / generated service); signed payload body remains JSON `RawFrame`.
 - `/healthz` and `/readyz` HTTP endpoints.
 - mTLS-capable server configuration.
 - Ed25519 detached signature verification.
@@ -64,4 +64,4 @@ Do not commit generated certificates or keys.
 
 ## Before Kotlin Driver Work
 
-The next task should stabilize this foundation first: add generated protobuf bindings, replace the JSON codec path, implement durable replay state, and decide whether Parquet is required before any Android AccessibilityService scaffold begins.
+The next task should stabilize this foundation first: implement durable replay state, and decide whether Parquet is required before any Android AccessibilityService scaffold begins.

@@ -38,7 +38,6 @@ func run() error {
 
 	conn, err := grpc.NewClient(*addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.ForceCodec(client.JSONCodec{})),
 	)
 	if err != nil {
 		return err

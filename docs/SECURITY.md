@@ -47,4 +47,4 @@ Sanitizer errors fail closed. The ingest service returns a drop decision and doe
 - Local NER is an interface with a conservative no-op placeholder.
 - Vision redaction is an interface and bounding-box model only.
 - Parquet storage is not yet implemented.
-- Generated protobuf Go bindings are pending local tool installation.
+- Signed frame payload remains JSON inside the protobuf envelope; full `TelemetryFrame` protobuf payload is not used yet.

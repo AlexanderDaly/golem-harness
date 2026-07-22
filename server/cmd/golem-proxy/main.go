@@ -76,7 +76,7 @@ func run() error {
 		grpcOptions = append(grpcOptions, grpc.Creds(creds))
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
-	ingest.RegisterTelemetryIngestServiceServer(grpcServer, service)
+	ingest.Register(grpcServer, service)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

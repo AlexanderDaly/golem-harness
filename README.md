@@ -4,7 +4,7 @@ Golem-Harness is a consent-based Android automation research harness for operato
 
 This repository currently contains only the Go-side server foundation:
 
-- a versioned protobuf telemetry contract
+- a versioned protobuf telemetry contract (Buf-generated Go stubs in `server/gen/`)
 - an mTLS-capable ingestion proxy scaffold
 - Ed25519 signed payload verification
 - fail-closed sanitizer interfaces and implementation
@@ -36,9 +36,16 @@ go test ./...
 
 See `docs/MVP.md` for local proxy and mock-client usage.
 
+## Codegen
+
+```bash
+# requires buf CLI
+make proto
+```
+
 ## Current Limitations
 
-- Generated protobuf Go bindings are pending local protobuf tooling.
+- Signed frame payload is still JSON `RawFrame` (envelope/RPC are protobuf).
 - Storage is sanitized JSONL, not Parquet.
 - Replay protection is in-memory only.
 - Local NER and vision redaction are placeholder interfaces.

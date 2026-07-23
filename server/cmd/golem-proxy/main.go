@@ -54,11 +54,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	replayGuard, err := auth.NewSQLiteReplayGuard(cfg.ReplayPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = replayGuard.Close() }()
 	pipeline := sanitize.NewPipeline(cfg.AllowedPackages, cfg.SensitivePackages)
 	service := &ingest.Service{
 		Verifier: &auth.Verifier{
 			Registry:        registry,
-			ReplayGuard:     auth.NewMemoryReplayGuard(),
+			ReplayGuard:     replayGuard,
 			MaxPayloadBytes: cfg.MaxPayloadBytes,
 			TTL:             cfg.SignatureTTL(),
 		},
@@ -69,7 +74,11 @@ func run() error {
 
 	grpcOptions := ingest.ServerOptions(cfg.MaxPayloadBytes + 4096)
 	if cfg.MTLS.Enabled {
-		creds, err := transportCredentials(cfg.MTLS)
+		mtls := cfg.MTLS
+		if registry.RequiresClientCert() {
+			mtls.RequireClient = true
+		}
+		creds, err := transportCredentials(mtls)
 		if err != nil {
 			return err
 		}

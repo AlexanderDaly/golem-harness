@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"golem-harness/server/internal/storage"
-	"golem-harness/server/internal/trajectory"
+	"golem-harness/server/pkg/trajectory"
 )
 
 func TestJSONLSinkAcceptsOnlySanitizedFrames(t *testing.T) {

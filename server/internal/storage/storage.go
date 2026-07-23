@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"golem-harness/server/internal/trajectory"
+	"golem-harness/server/pkg/trajectory"
 )
 
 var ErrUnsafeFrame = errors.New("unsafe sanitized frame")

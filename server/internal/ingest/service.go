@@ -11,7 +11,8 @@ import (
 	"golem-harness/server/internal/auth"
 	"golem-harness/server/internal/sanitize"
 	"golem-harness/server/internal/storage"
-	"golem-harness/server/internal/trajectory"
+	"golem-harness/server/pkg/signing"
+	"golem-harness/server/pkg/trajectory"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -37,7 +38,7 @@ type Service struct {
 	Logger    *slog.Logger
 }
 
-func (s *Service) IngestFrame(ctx context.Context, envelope *auth.SignedEnvelope) (*Response, error) {
+func (s *Service) IngestFrame(ctx context.Context, envelope *signing.SignedEnvelope) (*Response, error) {
 	if envelope == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing envelope")
 	}
@@ -98,7 +99,7 @@ func (s *Service) IngestFrame(ctx context.Context, envelope *auth.SignedEnvelope
 	}, nil
 }
 
-func bindEnvelopeToFrame(envelope auth.SignedEnvelope, frame *trajectory.RawFrame) error {
+func bindEnvelopeToFrame(envelope signing.SignedEnvelope, frame *trajectory.RawFrame) error {
 	// Fill empty string IDs from the envelope; never treat sequence 0 as unset.
 	if frame.ProtocolVersion == "" {
 		frame.ProtocolVersion = envelope.ProtocolVersion
@@ -124,11 +125,11 @@ func bindEnvelopeToFrame(envelope auth.SignedEnvelope, frame *trajectory.RawFram
 
 func mapAuthError(err error) error {
 	switch {
-	case errors.Is(err, auth.ErrMissingSignature), errors.Is(err, auth.ErrInvalidSignature), errors.Is(err, auth.ErrUnauthorized), errors.Is(err, auth.ErrExpiredPayload), errors.Is(err, auth.ErrFuturePayload):
+	case errors.Is(err, auth.ErrMissingSignature), errors.Is(err, auth.ErrInvalidSignature), errors.Is(err, auth.ErrUnauthorized), errors.Is(err, auth.ErrExpiredPayload), errors.Is(err, auth.ErrFuturePayload), errors.Is(err, auth.ErrCertMismatch):
 		return status.Error(codes.Unauthenticated, safeReason(err))
 	case errors.Is(err, auth.ErrReplay):
 		return status.Error(codes.AlreadyExists, safeReason(err))
-	case errors.Is(err, auth.ErrOversizedPayload):
+	case errors.Is(err, auth.ErrOversizedPayload), errors.Is(err, auth.ErrReplayStateFull):
 		return status.Error(codes.ResourceExhausted, safeReason(err))
 	default:
 		return status.Error(codes.InvalidArgument, safeReason(err))
@@ -148,7 +149,7 @@ func peerCertificateFingerprint(ctx context.Context) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Service) safeLog(event string, envelope *auth.SignedEnvelope, decision string, reasonCodes []string) {
+func (s *Service) safeLog(event string, envelope *signing.SignedEnvelope, decision string, reasonCodes []string) {
 	logger := s.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -167,8 +168,8 @@ func (s *Service) safeLog(event string, envelope *auth.SignedEnvelope, decision 
 	)
 }
 
-func safeRequestID(envelope auth.SignedEnvelope) string {
-	return auth.SafeHash(envelope.DeviceID + ":" + envelope.TrajectoryID + ":" + envelope.FrameID)[:24]
+func safeRequestID(envelope signing.SignedEnvelope) string {
+	return signing.SafeHash(envelope.DeviceID + ":" + envelope.TrajectoryID + ":" + envelope.FrameID)[:24]
 }
 
 func safeReason(err error) string {
@@ -187,6 +188,10 @@ func safeReason(err error) string {
 		return "unauthorized_device"
 	case errors.Is(err, auth.ErrReplay):
 		return "replayed_frame"
+	case errors.Is(err, auth.ErrReplayStateFull):
+		return "replay_state_full"
+	case errors.Is(err, auth.ErrCertMismatch):
+		return "client_cert_mismatch"
 	case errors.Is(err, auth.ErrMalformed):
 		return "malformed_envelope"
 	default:

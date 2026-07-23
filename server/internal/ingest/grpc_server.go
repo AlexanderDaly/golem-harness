@@ -35,5 +35,5 @@ func (s *GRPCServer) IngestFrame(ctx context.Context, req *golemv1.IngestFrameRe
 	if err != nil {
 		return nil, err
 	}
-	return responseToProto(resp), nil
+	return ResponseToProto(resp), nil
 }

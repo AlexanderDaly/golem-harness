@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -47,8 +48,20 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	allowed := syntheticFrame("mock-frame-allowed", 1, "com.android.settings")
-	allowedEnvelope, err := client.BuildSignedEnvelope(privateKey, time.Now(), allowed)
+	// public_key_id must match device registry when configured (signed field).
+	const publicKeyID = "mock-key"
+
+	// Fresh trajectory + frame IDs each run. Sequences must strictly increase per
+	// device across process restarts (SQLite replay), so base them on time.
+	trajectoryID, err := newTrajectoryID()
+	if err != nil {
+		return err
+	}
+	seqBase := uint64(time.Now().UnixNano())
+	fmt.Printf("trajectory_id: %s seq_base=%d\n", trajectoryID, seqBase)
+
+	allowed := syntheticFrame(trajectoryID, trajectoryID+"-allowed", seqBase, "com.android.settings")
+	allowedEnvelope, err := client.BuildSignedEnvelopeWithKey(privateKey, time.Now(), allowed, publicKeyID, "")
 	if err != nil {
 		return err
 	}
@@ -58,8 +71,8 @@ func run() error {
 	}
 	fmt.Printf("allowed frame decision: %s reasons=%v\n", allowedResp.Decision, allowedResp.ReasonCodes)
 
-	sensitive := syntheticFrame("mock-frame-sensitive", 2, "com.example.bank")
-	sensitiveEnvelope, err := client.BuildSignedEnvelope(privateKey, time.Now(), sensitive)
+	sensitive := syntheticFrame(trajectoryID, trajectoryID+"-sensitive", seqBase+1, "com.example.bank")
+	sensitiveEnvelope, err := client.BuildSignedEnvelopeWithKey(privateKey, time.Now(), sensitive, publicKeyID, "")
 	if err != nil {
 		return err
 	}
@@ -69,6 +82,14 @@ func run() error {
 	}
 	fmt.Printf("sensitive frame decision: %s reasons=%v\n", sensitiveResp.Decision, sensitiveResp.ReasonCodes)
 	return nil
+}
+
+func newTrajectoryID() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("mock-trajectory-%d-%s", time.Now().UnixNano(), hex.EncodeToString(b[:])), nil
 }
 
 func loadOrCreateKeypair(dir string) (ed25519.PublicKey, ed25519.PrivateKey, error) {
@@ -105,10 +126,10 @@ func loadOrCreateKeypair(dir string) (ed25519.PublicKey, ed25519.PrivateKey, err
 	return publicKey, privateKey, nil
 }
 
-func syntheticFrame(frameID string, sequence uint64, pkg string) client.RawFrame {
+func syntheticFrame(trajectoryID, frameID string, sequence uint64, pkg string) client.RawFrame {
 	return client.RawFrame{
 		ProtocolVersion: "golem.v1",
-		TrajectoryID:    "mock-trajectory",
+		TrajectoryID:    trajectoryID,
 		FrameID:         frameID,
 		Sequence:        sequence,
 		EventTimestamp:  time.Now().UTC(),

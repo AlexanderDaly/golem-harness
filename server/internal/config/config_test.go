@@ -49,6 +49,22 @@ func TestAllowedPackageConfigParses(t *testing.T) {
 	}
 }
 
+func TestReplayPathDefaultsBesideStorage(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.ReplayPath = ""
+	cfg.StoragePath = t.TempDir() + "/nested/frames.jsonl"
+	path := writeConfig(t, cfg)
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	wantSuffix := "/nested/replay.db"
+	if !strings.HasSuffix(loaded.ReplayPath, wantSuffix) && !strings.HasSuffix(loaded.ReplayPath, "nested/replay.db") {
+		t.Fatalf("expected default replay beside storage, got %q", loaded.ReplayPath)
+	}
+}
+
 func validConfig(t *testing.T) config.Config {
 	t.Helper()
 	publicKey, _ := testutil.KeyPair(1)

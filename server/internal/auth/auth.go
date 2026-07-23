@@ -7,41 +7,34 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
+
+	"golem-harness/server/pkg/signing"
 )
 
 const (
-	SignatureAlgEd25519 = "Ed25519"
+	SignatureAlgEd25519 = signing.SignatureAlgEd25519
 	defaultClockSkew    = 30 * time.Second
+	// MaxMemorySeenFrames caps per-device frame ID retention in MemoryReplayGuard.
+	// Fail closed when exceeded (tests / short runs only; proxy uses SQLite).
+	MaxMemorySeenFrames = 100_000
 )
 
 var (
-	ErrMissingSignature = errors.New("missing signature")
-	ErrInvalidSignature = errors.New("invalid signature")
+	ErrMissingSignature = signing.ErrMissingSignature
+	ErrInvalidSignature = signing.ErrInvalidSignature
 	ErrExpiredPayload   = errors.New("expired payload")
 	ErrFuturePayload    = errors.New("payload timestamp is too far in the future")
 	ErrOversizedPayload = errors.New("oversized payload")
 	ErrUnauthorized     = errors.New("unauthorized device")
 	ErrReplay           = errors.New("replayed frame")
-	ErrMalformed        = errors.New("malformed signed envelope")
+	ErrMalformed        = signing.ErrMalformed
+	ErrReplayStateFull  = errors.New("replay state full")
+	ErrCertMismatch     = errors.New("client certificate fingerprint mismatch")
 )
 
-type SignedEnvelope struct {
-	ProtocolVersion             string    `json:"protocol_version"`
-	DeviceID                    string    `json:"device_id"`
-	TrajectoryID                string    `json:"trajectory_id"`
-	FrameID                     string    `json:"frame_id"`
-	Sequence                    uint64    `json:"sequence"`
-	SignedAt                    time.Time `json:"signed_at"`
-	Payload                     []byte    `json:"payload"`
-	DetachedSignature           []byte    `json:"detached_signature"`
-	PayloadSHA256Hex            string    `json:"payload_sha256_hex"`
-	SignatureAlg                string    `json:"signature_alg"`
-	PublicKeyID                 string    `json:"public_key_id,omitempty"`
-	ClientCertFingerprintSHA256 string    `json:"client_cert_fingerprint_sha256,omitempty"`
-}
+type SignedEnvelope = signing.SignedEnvelope
 
 type Device struct {
 	DeviceID                    string
@@ -77,13 +70,27 @@ func (r *StaticDeviceRegistry) LookupDevice(_ context.Context, deviceID string) 
 	return device, ok
 }
 
+// RequiresClientCert reports whether any registered device binds a client cert fingerprint.
+func (r *StaticDeviceRegistry) RequiresClientCert() bool {
+	if r == nil {
+		return false
+	}
+	for _, d := range r.devices {
+		if d.ClientCertFingerprintSHA256 != "" {
+			return true
+		}
+	}
+	return false
+}
+
 type ReplayGuard interface {
 	CheckAndRecord(deviceID, frameID string, sequence uint64) error
 }
 
 type MemoryReplayGuard struct {
-	mu      sync.Mutex
-	devices map[string]*replayState
+	mu             sync.Mutex
+	devices        map[string]*replayState
+	maxSeenFrames  int
 }
 
 type replayState struct {
@@ -92,7 +99,20 @@ type replayState struct {
 }
 
 func NewMemoryReplayGuard() *MemoryReplayGuard {
-	return &MemoryReplayGuard{devices: make(map[string]*replayState)}
+	return &MemoryReplayGuard{
+		devices:       make(map[string]*replayState),
+		maxSeenFrames: MaxMemorySeenFrames,
+	}
+}
+
+// SetMaxSeenFramesForTest overrides the per-device frame-ID cap (tests only).
+func (g *MemoryReplayGuard) SetMaxSeenFramesForTest(n int) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.maxSeenFrames = n
 }
 
 func (g *MemoryReplayGuard) CheckAndRecord(deviceID, frameID string, sequence uint64) error {
@@ -113,6 +133,13 @@ func (g *MemoryReplayGuard) CheckAndRecord(deviceID, frameID string, sequence ui
 	}
 	if sequence <= state.maxSequence {
 		return ErrReplay
+	}
+	limit := g.maxSeenFrames
+	if limit <= 0 {
+		limit = MaxMemorySeenFrames
+	}
+	if len(state.seenFrames) >= limit {
+		return ErrReplayStateFull
 	}
 
 	state.seenFrames[frameID] = struct{}{}
@@ -180,14 +207,17 @@ func (v *Verifier) Verify(ctx context.Context, envelope SignedEnvelope, peerCert
 	if !ok {
 		return ErrUnauthorized
 	}
-	if device.PublicKeyID != "" && envelope.PublicKeyID != "" && device.PublicKeyID != envelope.PublicKeyID {
-		return ErrUnauthorized
+	// Public key id is signed; registry id must match when either side sets it.
+	if device.PublicKeyID != "" || envelope.PublicKeyID != "" {
+		if device.PublicKeyID == "" || envelope.PublicKeyID == "" || device.PublicKeyID != envelope.PublicKeyID {
+			return ErrUnauthorized
+		}
 	}
-	if device.ClientCertFingerprintSHA256 != "" && peerCertFingerprintSHA256 != "" && device.ClientCertFingerprintSHA256 != peerCertFingerprintSHA256 {
-		return ErrUnauthorized
+	if err := bindClientCert(device, envelope, peerCertFingerprintSHA256); err != nil {
+		return err
 	}
 
-	canonical, err := CanonicalBytes(envelope)
+	canonical, err := signing.CanonicalBytes(envelope)
 	if err != nil {
 		return err
 	}
@@ -200,49 +230,43 @@ func (v *Verifier) Verify(ctx context.Context, envelope SignedEnvelope, peerCert
 	return nil
 }
 
+// bindClientCert enforces fail-closed cert binding when the registry and/or
+// envelope claims a fingerprint. Peer fingerprint is required whenever either
+// side declares a binding.
+func bindClientCert(device Device, envelope SignedEnvelope, peerCertFingerprintSHA256 string) error {
+	wantRegistry := device.ClientCertFingerprintSHA256
+	wantEnvelope := envelope.ClientCertFingerprintSHA256
+	if wantRegistry == "" && wantEnvelope == "" {
+		return nil
+	}
+	if peerCertFingerprintSHA256 == "" {
+		return ErrCertMismatch
+	}
+	if wantRegistry != "" && wantRegistry != peerCertFingerprintSHA256 {
+		return ErrCertMismatch
+	}
+	if wantEnvelope != "" && wantEnvelope != peerCertFingerprintSHA256 {
+		return ErrCertMismatch
+	}
+	// When both registry and envelope declare fingerprints, they must agree.
+	if wantRegistry != "" && wantEnvelope != "" && wantRegistry != wantEnvelope {
+		return ErrCertMismatch
+	}
+	return nil
+}
+
 func CanonicalBytes(envelope SignedEnvelope) ([]byte, error) {
-	if envelope.ProtocolVersion == "" || envelope.DeviceID == "" || envelope.TrajectoryID == "" || envelope.FrameID == "" {
-		return nil, fmt.Errorf("%w: canonical envelope fields are required", ErrMalformed)
-	}
-	if envelope.PayloadSHA256Hex == "" {
-		return nil, fmt.Errorf("%w: payload hash is required", ErrMalformed)
-	}
-
-	prefix := "golem-harness-signature-v1\n" +
-		"protocol_version=" + envelope.ProtocolVersion + "\n" +
-		"device_id=" + envelope.DeviceID + "\n" +
-		"trajectory_id=" + envelope.TrajectoryID + "\n" +
-		"frame_id=" + envelope.FrameID + "\n" +
-		"sequence=" + strconv.FormatUint(envelope.Sequence, 10) + "\n" +
-		"signed_at=" + envelope.SignedAt.UTC().Format(time.RFC3339Nano) + "\n" +
-		"payload_sha256_hex=" + envelope.PayloadSHA256Hex + "\n\n"
-
-	out := make([]byte, 0, len(prefix)+len(envelope.Payload))
-	out = append(out, []byte(prefix)...)
-	out = append(out, envelope.Payload...)
-	return out, nil
+	return signing.CanonicalBytes(envelope)
 }
 
 func HashPayload(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
+	return signing.HashPayload(payload)
 }
 
 func SignEnvelope(privateKey ed25519.PrivateKey, envelope SignedEnvelope) (SignedEnvelope, error) {
-	if len(privateKey) != ed25519.PrivateKeySize {
-		return SignedEnvelope{}, fmt.Errorf("ed25519 private key must be %d bytes", ed25519.PrivateKeySize)
-	}
-	envelope.SignatureAlg = SignatureAlgEd25519
-	envelope.PayloadSHA256Hex = HashPayload(envelope.Payload)
-	canonical, err := CanonicalBytes(envelope)
-	if err != nil {
-		return SignedEnvelope{}, err
-	}
-	envelope.DetachedSignature = ed25519.Sign(privateKey, canonical)
-	return envelope, nil
+	return signing.SignEnvelope(privateKey, envelope)
 }
 
 func SafeHash(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])
+	return signing.SafeHash(value)
 }

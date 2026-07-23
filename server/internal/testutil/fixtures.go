@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"golem-harness/server/internal/auth"
-	"golem-harness/server/internal/trajectory"
+	"golem-harness/server/pkg/trajectory"
 )
 
 const (

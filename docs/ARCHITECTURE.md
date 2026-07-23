@@ -7,7 +7,7 @@ Project Golem-Harness is an internal, consent-based Android automation research 
 1. A test client builds a synthetic telemetry frame in memory.
 2. The client serializes the frame payload and signs a canonical representation with Ed25519.
 3. `golem-proxy` receives `IngestFrameRequest` over protobuf gRPC (`server/gen/golem/v1`). The signed envelope’s `canonical_payload` is still JSON bytes of a domain `RawFrame` (not protobuf `TelemetryFrame`).
-4. The proxy verifies payload size, timestamp freshness, replay status, device authorization, payload hash, and detached signature.
+4. The proxy verifies payload size, timestamp freshness, durable replay status (SQLite), device authorization, payload hash, and detached signature.
 5. The raw payload is decoded only in request scope and immediately passed through the sanitizer.
 6. Accepted sanitized frames are written to the storage sink. Dropped or quarantined frames are not persisted.
 
@@ -17,6 +17,7 @@ Project Golem-Harness is an internal, consent-based Android automation research 
 - Signature boundary: Ed25519 verifies that the payload came from an allowed device key.
 - Sanitizer boundary: raw telemetry may exist only before the sanitizer returns. Storage accepts only `trajectory.SanitizedFrame`.
 - Storage boundary: Phase 1 writes sanitized JSONL. Parquet is intentionally deferred.
+- Replay boundary: seen frame IDs and per-device max sequence are stored in a local SQLite file (`replay_path`, default beside `storage_path`).
 
 ## Telemetry Lifecycle
 

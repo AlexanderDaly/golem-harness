@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -107,6 +108,132 @@ func TestVerifierRejectsOversizedPayload(t *testing.T) {
 	if !errors.Is(err, auth.ErrOversizedPayload) {
 		t.Fatalf("expected oversized payload, got %v", err)
 	}
+}
+
+func TestVerifierRejectsMissingPublicKeyIDWhenRegistryRequiresIt(t *testing.T) {
+	publicKey, privateKey := testutil.KeyPair(1)
+	verifier := newVerifier(t, publicKey)
+	frame := testutil.RawFrame(testutil.AllowedPkg, "frame-1", 1, "Settings")
+	payload, err := jsonMarshal(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := auth.SignEnvelope(privateKey, auth.SignedEnvelope{
+		ProtocolVersion: frame.ProtocolVersion,
+		DeviceID:        frame.Device.DeviceID,
+		TrajectoryID:    frame.TrajectoryID,
+		FrameID:         frame.FrameID,
+		Sequence:        frame.Sequence,
+		SignedAt:        fixedNow(),
+		Payload:         payload,
+		SignatureAlg:    auth.SignatureAlgEd25519,
+		// PublicKeyID intentionally empty while registry has test-key
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifier.Verify(context.Background(), envelope, ""); !errors.Is(err, auth.ErrUnauthorized) {
+		t.Fatalf("expected unauthorized for missing public_key_id, got %v", err)
+	}
+}
+
+func TestVerifierEnforcesClientCertFingerprint(t *testing.T) {
+	publicKey, privateKey := testutil.KeyPair(1)
+	registry, err := auth.NewStaticDeviceRegistry([]auth.Device{{
+		DeviceID:                    testutil.DeviceID,
+		PublicKey:                   publicKey,
+		PublicKeyID:                 "test-key",
+		ClientCertFingerprintSHA256: "abc123",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier := &auth.Verifier{
+		Registry:        registry,
+		ReplayGuard:     auth.NewMemoryReplayGuard(),
+		MaxPayloadBytes: 64 * 1024,
+		TTL:             5 * time.Minute,
+		Now:             fixedNow,
+	}
+	frame := testutil.RawFrame(testutil.AllowedPkg, "frame-1", 1, "Settings")
+	payload, err := jsonMarshal(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := auth.SignEnvelope(privateKey, auth.SignedEnvelope{
+		ProtocolVersion:             frame.ProtocolVersion,
+		DeviceID:                    frame.Device.DeviceID,
+		TrajectoryID:                frame.TrajectoryID,
+		FrameID:                     frame.FrameID,
+		Sequence:                    frame.Sequence,
+		SignedAt:                    fixedNow(),
+		Payload:                     payload,
+		SignatureAlg:                auth.SignatureAlgEd25519,
+		PublicKeyID:                 "test-key",
+		ClientCertFingerprintSHA256: "abc123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifier.Verify(context.Background(), envelope, ""); !errors.Is(err, auth.ErrCertMismatch) {
+		t.Fatalf("expected cert mismatch without peer, got %v", err)
+	}
+	if err := verifier.Verify(context.Background(), envelope, "wrong"); !errors.Is(err, auth.ErrCertMismatch) {
+		t.Fatalf("expected cert mismatch for wrong peer, got %v", err)
+	}
+	if err := verifier.Verify(context.Background(), envelope, "abc123"); err != nil {
+		t.Fatalf("matching peer cert should accept: %v", err)
+	}
+}
+
+func TestMemoryReplayGuardFailsClosedWhenFull(t *testing.T) {
+	guard := auth.NewMemoryReplayGuard()
+	guard.SetMaxSeenFramesForTest(2)
+	if err := guard.CheckAndRecord("d", "f1", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.CheckAndRecord("d", "f2", 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.CheckAndRecord("d", "f3", 3); !errors.Is(err, auth.ErrReplayStateFull) {
+		t.Fatalf("expected full, got %v", err)
+	}
+}
+
+func TestCanonicalBytesIncludesAlgKeyAndCert(t *testing.T) {
+	payload := []byte(`{}`)
+	envelope := auth.SignedEnvelope{
+		ProtocolVersion:             "golem.v1",
+		DeviceID:                    "d",
+		TrajectoryID:                "t",
+		FrameID:                     "f",
+		Sequence:                    1,
+		SignedAt:                    fixedNow(),
+		Payload:                     payload,
+		PayloadSHA256Hex:            auth.HashPayload(payload),
+		SignatureAlg:                auth.SignatureAlgEd25519,
+		PublicKeyID:                 "k",
+		ClientCertFingerprintSHA256: "fp",
+	}
+	canonical, err := auth.CanonicalBytes(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(canonical)
+	for _, want := range []string{
+		"golem-harness-signature-v2\n",
+		"signature_alg=Ed25519\n",
+		"public_key_id=k\n",
+		"client_cert_fingerprint_sha256=fp\n",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("canonical missing %q in %q", want, s)
+		}
+	}
+}
+
+func jsonMarshal(v any) ([]byte, error) {
+	return json.Marshal(v)
 }
 
 func newVerifier(t *testing.T, publicKey ed25519.PublicKey) *auth.Verifier {

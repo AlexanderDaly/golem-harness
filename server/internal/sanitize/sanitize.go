@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"golem-harness/server/internal/trajectory"
+	"golem-harness/server/pkg/trajectory"
 )
 
 const DefaultVersion = "sanitize-v0.1.0"

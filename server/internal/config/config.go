@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"golem-harness/server/internal/auth"
@@ -21,6 +22,7 @@ type Config struct {
 	GRPCAddr            string         `json:"grpc_addr"`
 	HTTPAddr            string         `json:"http_addr"`
 	StoragePath         string         `json:"storage_path"`
+	ReplayPath          string         `json:"replay_path"`
 	MaxPayloadBytes     int            `json:"max_payload_bytes"`
 	SignatureTTLSeconds int            `json:"signature_ttl_seconds"`
 	AllowedPackages     []string       `json:"allowed_packages"`
@@ -72,6 +74,9 @@ func (c *Config) Validate() error {
 	if c.StoragePath == "" {
 		return errors.New("storage_path is required")
 	}
+	if c.ReplayPath == "" {
+		c.ReplayPath = filepath.Join(filepath.Dir(c.StoragePath), "replay.db")
+	}
 	if len(c.AllowedDevices) == 0 {
 		return errors.New("at least one allowed device is required")
 	}
@@ -94,6 +99,20 @@ func (c *Config) Validate() error {
 		if c.MTLS.CertFile == "" || c.MTLS.KeyFile == "" || c.MTLS.ClientCAFile == "" {
 			return errors.New("mtls cert_file, key_file, and client_ca_file are required when mtls is enabled")
 		}
+	}
+	devicesRequireClientCert := false
+	for _, d := range c.AllowedDevices {
+		if d.ClientCertFingerprintSHA256 != "" {
+			devicesRequireClientCert = true
+			break
+		}
+	}
+	if devicesRequireClientCert {
+		if !c.MTLS.Enabled {
+			return errors.New("mtls must be enabled when a device sets client_cert_fingerprint_sha256")
+		}
+		// Fail closed: registry cert binding is useless without required client certs.
+		c.MTLS.RequireClient = true
 	}
 	if _, err := c.AuthDevices(); err != nil {
 		return err

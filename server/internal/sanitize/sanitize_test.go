@@ -7,7 +7,7 @@ import (
 
 	"golem-harness/server/internal/sanitize"
 	"golem-harness/server/internal/testutil"
-	"golem-harness/server/internal/trajectory"
+	"golem-harness/server/pkg/trajectory"
 )
 
 func TestSensitivePackageKillSwitchQuarantinesFrame(t *testing.T) {

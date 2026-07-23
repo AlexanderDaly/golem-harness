@@ -2,6 +2,7 @@
   "grpc_addr": "127.0.0.1:7443",
   "http_addr": "127.0.0.1:8080",
   "storage_path": "data/sanitized_frames.jsonl",
+  "replay_path": "data/replay.db",
   "max_payload_bytes": 65536,
   "signature_ttl_seconds": 300,
   "allowed_packages": ["com.android.settings"],

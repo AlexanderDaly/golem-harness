@@ -36,6 +36,8 @@ go test ./...
 
 See `docs/MVP.md` for local proxy and mock-client usage.
 
+Replay state persists in the proxy’s `replay_path` SQLite file (default `data/replay.db` beside storage). The mock client uses a fresh trajectory id, unique frame ids, and time-based sequences each run so a second run against the same proxy data dir does not hit replay rejection.
+
 ## Codegen
 
 ```bash
@@ -47,6 +49,6 @@ make proto
 
 - Signed frame payload is still JSON `RawFrame` (envelope/RPC are protobuf).
 - Storage is sanitized JSONL, not Parquet.
-- Replay protection is in-memory only.
+- Replay protection is local SQLite (single process); not multi-node.
 - Local NER and vision redaction are placeholder interfaces.
 - No Android driver or AccessibilityService implementation is included.

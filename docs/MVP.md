@@ -9,7 +9,7 @@
 - mTLS-capable server configuration.
 - Ed25519 detached signature verification.
 - Device id to public key authorization.
-- Expiry, replay, payload hash, and payload size checks.
+- Expiry, durable SQLite replay, payload hash, and payload size checks.
 - Fail-closed sanitizer with package allowlist, sensitive-package kill switch, structural attrition, regex redaction, local NER interface, and vision redaction interface.
 - Sanitized-only JSONL storage sink.
 - Mock signed client with synthetic accepted and sensitive-package frames.
@@ -64,4 +64,4 @@ Do not commit generated certificates or keys.
 
 ## Before Kotlin Driver Work
 
-The next task should stabilize this foundation first: implement durable replay state, and decide whether Parquet is required before any Android AccessibilityService scaffold begins.
+The next task should stabilize this foundation first: decide whether Parquet is required before any Android AccessibilityService scaffold begins.

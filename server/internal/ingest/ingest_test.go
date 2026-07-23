@@ -17,8 +17,9 @@ import (
 	"golem-harness/server/internal/ingest"
 	"golem-harness/server/internal/sanitize"
 	"golem-harness/server/internal/testutil"
-	"golem-harness/server/internal/trajectory"
 	"golem-harness/server/pkg/client"
+	"golem-harness/server/pkg/signing"
+	"golem-harness/server/pkg/trajectory"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -93,7 +94,7 @@ func TestMissingSignedAtIsInvalidArgumentNotUnauthenticated(t *testing.T) {
 	defer env.cleanup()
 
 	envelope := testutil.SignedEnvelope(t, env.privateKey, testutil.RawFrame(testutil.AllowedPkg, "frame-1", 1, "Settings"), env.now)
-	pbEnv := ingest.EnvelopeToProto(envelope)
+	pbEnv := signing.EnvelopeToProto(envelope)
 	pbEnv.SignedAt = nil
 
 	api := golemv1.NewTelemetryIngestServiceClient(env.conn)

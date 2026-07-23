@@ -17,3 +17,7 @@ data/
 bin/
 coverage.out
 *.test
+
+# Local review snapshots
+.review-snap*
+_to_delete/

@@ -16,7 +16,7 @@ Project Golem-Harness is an internal, consent-based Android automation research 
 - Transport boundary: gRPC can run with mTLS. When enabled, TLS 1.3 and client certificate verification are configured from local files.
 - Signature boundary: Ed25519 verifies that the payload came from an allowed device key.
 - Sanitizer boundary: raw telemetry may exist only before the sanitizer returns. Storage accepts only `trajectory.SanitizedFrame`.
-- Storage boundary: Phase 1 writes sanitized JSONL. Parquet is intentionally deferred.
+- Storage boundary: Phase 1 live path is sanitized JSONL (size/day rotation + fsync). Parquet is offline compaction only — not required for ingest; trigger when volume/query cost or a consumer needs it (see `docs/MVP.md`).
 - Replay boundary: seen frame IDs and per-device max sequence are stored in a local SQLite file (`replay_path`, default beside `storage_path`).
 
 ## Telemetry Lifecycle
@@ -48,5 +48,5 @@ Ingest implements the generated `TelemetryIngestServiceServer` (`ingest.GRPCServ
 
 - No Android driver or AccessibilityService is implemented.
 - No OCR, screenshots bytes, cloud NER, cloud OCR, telemetry processing API, or model inference is implemented.
-- JSONL is the safe test sink. Parquet is the next storage milestone.
+- JSONL is the live and test sink. Parquet is a future offline compaction output, not the next online milestone.
 - mTLS code is present, but local certificate generation is documented rather than bundled.

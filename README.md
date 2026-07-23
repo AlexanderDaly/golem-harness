@@ -48,7 +48,7 @@ make proto
 ## Current Limitations
 
 - Signed frame payload is still JSON `RawFrame` (envelope/RPC are protobuf).
-- Storage is sanitized JSONL, not Parquet.
+- Live storage is sanitized JSONL; Parquet is deferred offline compaction (see `docs/MVP.md`).
 - Replay protection is local SQLite (single process); not multi-node.
 - Local NER and vision redaction are placeholder interfaces.
 - No Android driver or AccessibilityService implementation is included.

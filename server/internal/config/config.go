@@ -23,6 +23,10 @@ type Config struct {
 	HTTPAddr            string         `json:"http_addr"`
 	StoragePath         string         `json:"storage_path"`
 	ReplayPath          string         `json:"replay_path"`
+	StorageRotateMaxBytes int64        `json:"storage_rotate_max_bytes"`
+	StorageRotateDaily  bool           `json:"storage_rotate_daily"`
+	// StorageFsync defaults to true when omitted (nil). Set false to disable.
+	StorageFsync        *bool          `json:"storage_fsync"`
 	MaxPayloadBytes     int            `json:"max_payload_bytes"`
 	SignatureTTLSeconds int            `json:"signature_ttl_seconds"`
 	AllowedPackages     []string       `json:"allowed_packages"`
@@ -76,6 +80,9 @@ func (c *Config) Validate() error {
 	}
 	if c.ReplayPath == "" {
 		c.ReplayPath = filepath.Join(filepath.Dir(c.StoragePath), "replay.db")
+	}
+	if c.StorageRotateMaxBytes < 0 {
+		return errors.New("storage_rotate_max_bytes must be non-negative")
 	}
 	if len(c.AllowedDevices) == 0 {
 		return errors.New("at least one allowed device is required")
@@ -148,4 +155,12 @@ func (c Config) SignatureTTL() time.Duration {
 		return DefaultSignatureTTL
 	}
 	return time.Duration(c.SignatureTTLSeconds) * time.Second
+}
+
+// StorageFsyncEnabled reports whether JSONL writes should fsync (default true).
+func (c Config) StorageFsyncEnabled() bool {
+	if c.StorageFsync == nil {
+		return true
+	}
+	return *c.StorageFsync
 }

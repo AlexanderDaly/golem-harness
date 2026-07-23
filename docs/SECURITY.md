@@ -76,6 +76,6 @@ Empty optional strings still appear as `public_key_id=\n` and `client_cert_finge
 - Replay SQLite is local single-process only (no multi-node shared replay).
 - Local NER is an interface with a conservative no-op placeholder.
 - Vision redaction is an interface and bounding-box model only.
-- Parquet storage is not yet implemented.
+- Parquet is offline compaction only (not implemented); live storage is sanitized JSONL.
 - Signed frame payload remains JSON inside the protobuf envelope; full `TelemetryFrame` protobuf payload is not used yet.
 - Adding a second signature algorithm still requires deliberate verifier + client work (alg is signed, but only Ed25519 is accepted today).

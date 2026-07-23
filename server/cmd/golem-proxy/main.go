@@ -50,10 +50,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	sink, err := storage.NewJSONLSink(cfg.StoragePath)
+	sink, err := storage.NewJSONLSinkWithOptions(cfg.StoragePath, storage.JSONLOptions{
+		MaxBytes:    cfg.StorageRotateMaxBytes,
+		RotateDaily: cfg.StorageRotateDaily,
+		Sync:        cfg.StorageFsyncEnabled(),
+	})
 	if err != nil {
 		return err
 	}
+	defer func() { _ = sink.Close() }()
 	replayGuard, err := auth.NewSQLiteReplayGuard(cfg.ReplayPath)
 	if err != nil {
 		return err

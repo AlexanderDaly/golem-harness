@@ -63,6 +63,7 @@ No root go.work or CI. Lint/typecheck beyond `go test`: `make lint-proto` only.
 - **Replay:** proxy uses `SQLiteReplayGuard`. Tests may use `MemoryReplayGuard` (bounded; fails closed at cap). Rules: unique `(device_id, frame_id)` + strictly increasing sequence per device. SQLite `seen_frames` is **intentionally unbounded** (catches frame_id reuse at a new sequence; sequence check alone is not enough for that case). Do not prune without a design.
 - **NER / vision:** local no-op placeholders — keep local; no external services.
 - **Logging:** hashed device/trajectory ids + decisions/reason codes only (`ingest.safeLog`).
+- **JSONL storage:** `storage_rotate_max_bytes`, `storage_rotate_daily`, `storage_fsync` (default true). Archives rename to `<name>-<UTC stamp>.jsonl`. Fsync reduces replay-recorded-but-lost-on-crash windows.
 
 ## Do not commit
 
@@ -70,4 +71,4 @@ No root go.work or CI. Lint/typecheck beyond `go test`: `make lint-proto` only.
 
 ## Scope discipline
 
-Stabilize server foundation before any Kotlin/Android driver work: storage direction (JSONL now; Parquet deferred). Document measurable gaps; do not imply unfinished capabilities are done.
+Parquet is **offline compaction only** (not online ingest). Do not build it until volume/query cost or an explicit consumer requires it (`docs/MVP.md`). Kotlin/Android driver work is not blocked on Parquet. Document measurable gaps; do not imply unfinished capabilities are done.

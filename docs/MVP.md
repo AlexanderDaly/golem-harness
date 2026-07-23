@@ -62,6 +62,17 @@ For mTLS testing, generate a local CA, server cert, and client cert with OpenSSL
 
 Do not commit generated certificates or keys.
 
+## Storage decision: Parquet
+
+**Decision (recorded):** Parquet is **not** an online ingest path. Phase 1 live storage remains sanitized JSONL (rotation + fsync). Parquet is an **offline compaction** concern only.
+
+**Trigger to implement:** build a batch/compaction job (or equivalent) when **either**:
+
+1. cumulative accepted sanitized JSONL volume or query/scan cost makes day-partitioned columnar storage worth the pipeline, **or**
+2. a consumer explicitly requires Parquet (training export, warehouse load, etc.)
+
+Until then, do not block Android/Kotlin driver work on Parquet. Day-stamped JSONL archives (`frames-YYYYMMDD.jsonl`) are the intended compaction input layout.
+
 ## Before Kotlin Driver Work
 
-The next task should stabilize this foundation first: decide whether Parquet is required before any Android AccessibilityService scaffold begins.
+Go server foundation is stable enough to begin an Android AccessibilityService scaffold when ready. Parquet is not a gate (see above).
